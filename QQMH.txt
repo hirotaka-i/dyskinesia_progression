@@ -1,0 +1,33 @@
+require("qqman");require("data.table");require("tidyr");require("dplyr")
+t = commandArgs(trailingOnly = TRUE)
+FILE=t[1]
+LAMBDA_OUTPUT=t[2]
+NAME=basename(FILE)
+MH = fread(FILE) %>% filter(!is.na(P))
+if('ID' %in% names(MH)){
+    MH = MH %>% rename(SNP=ID)
+}
+MH = MH %>% separate(SNP, c("CHR", "BP"), remove = F) %>%
+  mutate_at(vars("CHR", "BP", "P", "ALT_Frq"), as.numeric) %>% 
+  filter(ALT_Frq>0.05 & ALT_Frq<0.95)
+# lambda
+chisq <- qchisq(MH$P,1, lower.tail = F)
+lambda = median(chisq)/qchisq(0.5,1)
+print(lambda)
+newchisq=chisq/lambda
+MH$newp=pchisq(newchisq,1, lower.tail = F)
+write(paste(NAME, lambda, sep=","), LAMBDA_OUTPUT, append = T)
+# QQ plot
+png(paste(NAME, "QQ.png", sep="_"))
+qq(MH$P, main = NAME)
+text(4, 1, sprintf("lambda = %.3f", lambda))
+text(4, 2, paste("N of variants =", nrow(MH)))
+dev.off()
+# MH plot if lambda is not too large
+if(lambda < 2){
+    MH = MH %>% filter(P<0.05)
+    maxlogP=-log10(min(MH$newp))
+    png(paste(NAME,"MH_Adj.png", sep="_"), width=2000, height=1000, pointsize=18)
+    manhattan(MH, col = c("blue4", "orange3"), p = "newp", main=NAME, cex.axis = 0.6, annotatePval = 0.00001, ylim=c(0, max(10, maxlogP)))
+    dev.off()
+}
